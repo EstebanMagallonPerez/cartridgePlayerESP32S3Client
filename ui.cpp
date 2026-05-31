@@ -1,13 +1,13 @@
 #include "ui.h"
 #include <lvgl.h>
 #include "EPD.h"
-#include "scheduler.h"
 
-extern lv_font_t Thermostat180;
-extern lv_font_t Thermostat50;
+extern lv_font_t Roboto32;
+extern lv_font_t Roboto37;
 
 #define SCREEN_WIDTH 792
 #define SCREEN_HEIGHT 272
+#define MAX_VISIBLE_TRACKS 5
 
 static uint8_t ImageBW[27200];
 
@@ -16,20 +16,14 @@ static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf[SCREEN_WIDTH * 40];
 
 /* LVGL objects */
-static lv_obj_t *target_label;
-static lv_obj_t *actual_label;
-static lv_obj_t *outside_label;
-static lv_obj_t *time_label;
-static lv_obj_t *fan_label;
-static lv_obj_t *mode_label;
-
-/* thermostat state */
-static int target_temp = 72;
-static int actual_temp = 70;
-static const char *fan_modes[] = {"Off","Auto","On"};
-static int fan_mode = 0;
-static const char *hvac_modes[] = {"Off","+Heat","*Cool","Auto"};
-static int hvac_mode = 0;
+static lv_obj_t *album_label;
+static lv_obj_t *now_playing_label;
+static lv_obj_t *artwork;
+static lv_obj_t *track1_label;
+static lv_obj_t *track2_label;
+static lv_obj_t *track3_label;
+static lv_obj_t *track4_label;
+static lv_obj_t *track5_label;
 
 /* render limiter */
 volatile static bool screenDirty = true;
@@ -78,94 +72,37 @@ void ui_mark_dirty()
     inactivity_refresh_completed = false;
 }
 
-void ui_set_outside(int temp, char icon)
+void ui_setText(const char* text)
 {
-    if (outside_label) {
-        if (temp == -999) {
-            lv_label_set_text(outside_label, "Failed");
-        } else {
-            lv_label_set_text_fmt(outside_label, "%d°%c", temp, icon);
-        }
-        ui_mark_dirty();
-    }
+    lv_label_set_text_fmt(album_label, "%s", text);
 }
 
-static void format_and_set_time_label(long long epoch_ms)
-{
-    long long seconds = epoch_ms / 1000LL;
-    long long secs_in_day = (seconds % 86400LL + 86400LL) % 86400LL;
+void ui_updateNowPlayingTracks(String titles[], int selectedIndex) {
 
-    int hour24 = secs_in_day / 3600;
-    int minute = (secs_in_day % 3600) / 60;
-
-    int hour12 = hour24 % 12;
-    if (hour12 == 0) hour12 = 12;
-
-    const char *ampm = (hour24 >= 12) ? "PM" : "AM";
-
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%d:%02d%s", hour12, minute, ampm);
-
-    int minutes_now = hour24 * 60 + minute;
-
-//TODO WE NEED TO PARSE THE ACTUAL DAY
-    ScheduleAction action = scheduler_tick(minutes_now, 0);
-
-    if (action.trigger_on)
-    {
-        hvac_mode = action.hvac_mode;
-        fan_mode = action.fan_mode;
-        //This ui setting is wrong we need to directly set it to the mode
-        lv_label_set_text_fmt(fan_label, "_%s", fan_modes[fan_mode]);
-        lv_label_set_text_fmt(mode_label, "%s", hvac_modes[hvac_mode]);
-    }
-
-    if (action.trigger_off)
-    {
-        hvac_mode = HVAC_OFF;
-        lv_label_set_text_fmt(mode_label, "%s", hvac_modes[hvac_mode]);
-    }
-
-    lv_label_set_text(time_label, buf);
-    ui_mark_dirty();
+    lv_label_set_text_fmt(track1_label, "%s%s",selectedIndex==0 ?">":"  " , titles[0].c_str());
+    lv_label_set_text_fmt(track2_label, "%s%s",selectedIndex==1 ?">":"  " , titles[1].c_str());
+    lv_label_set_text_fmt(track3_label, "%s%s",selectedIndex==2 ?">":"  " , titles[2].c_str());
+    lv_label_set_text_fmt(track4_label, "%s%s",selectedIndex==3 ?">":"  " , titles[3].c_str());
+    lv_label_set_text_fmt(track5_label, "%s%s",selectedIndex==4 ?">":"  " , titles[4].c_str());
+    last_activity = millis();
+    screenDirty = true;
 }
+lv_img_dsc_t artwork_dsc;
+void ui_updateArtwork(uint8_t * buf){
+    artwork_dsc.header.always_zero = 0;
+    artwork_dsc.header.w = 256;
+    artwork_dsc.header.h = 256;
+    artwork_dsc.header.cf = LV_IMG_CF_ALPHA_1BIT;  // correct for v8
 
-void ui_set_time_from_epoch(long long epoch_ms)
-{
-    format_and_set_time_label(epoch_ms);
-}
+    artwork_dsc.data_size = 256 * 256 / 8;
+    artwork_dsc.data = buf;
 
-void ui_change_fan_mode()
-{
-    fan_mode = (fan_mode + 1) % 3;
-    if (fan_label) lv_label_set_text_fmt(fan_label, "_%s", fan_modes[fan_mode]);
-    ui_mark_dirty();
-}
-
-void ui_change_hvac_mode()
-{
-    hvac_mode = (hvac_mode + 1) % 4;
-    if (mode_label) lv_label_set_text_fmt(mode_label, "%s", hvac_modes[hvac_mode]);
-    ui_mark_dirty();
-}
-
-void ui_inc_target_temp()
-{
-    target_temp++;
-    if (target_label) lv_label_set_text_fmt(target_label, "%d°", target_temp);
-    ui_mark_dirty();
-}
-
-void ui_dec_target_temp()
-{
-    target_temp--;
-    if (target_label) lv_label_set_text_fmt(target_label, "%d°", target_temp);
-    ui_mark_dirty();
+    lv_img_set_src(artwork, &artwork_dsc);
+    inactivity_refresh_completed = false;
 }
 
 void ui_full_refresh()
 {
-    Serial.println("Full refresh");
 
     EPD_Init();
     EPD_Display_Clear();
@@ -205,49 +142,79 @@ void ui_init()
     lv_disp_drv_register(&disp_drv);
 
     lv_obj_t *scr = lv_scr_act();
-    lv_obj_set_style_bg_color(scr, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_color(scr, lv_color_black(), LV_PART_MAIN);
 
-    target_label = lv_label_create(scr);
-    lv_label_set_text_fmt(target_label, "%d°", target_temp);
-    lv_obj_set_style_text_font(target_label, &Thermostat50, 0);
-    lv_obj_align(target_label, LV_ALIGN_TOP_MID, 0, 5);
+    // Root container
+    lv_obj_t *container = lv_obj_create(scr);
+    lv_obj_remove_style_all(container);
+    lv_obj_set_style_pad_top(container, 8, 0);
+    lv_obj_set_style_pad_left(container, 12, 0);
+    lv_obj_set_style_pad_gap(container, 8, 0);
+    lv_obj_set_size(container, SCREEN_WIDTH, SCREEN_HEIGHT);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE);
 
-    outside_label = lv_label_create(scr);
-    lv_label_set_text_fmt(outside_label, "%d°!", actual_temp);
-    lv_obj_set_style_text_font(outside_label, &Thermostat50, 0);
-    lv_obj_align(outside_label, LV_ALIGN_TOP_LEFT, 20, 5);
+    // --------------------
+    // LEFT: ARTWORK
+    // --------------------
+    artwork = lv_img_create(container);
+    lv_obj_set_size(artwork, 256, 256); // slightly smaller for padding
 
-    actual_label = lv_label_create(scr);
-    lv_label_set_text_fmt(actual_label, "%d°", actual_temp);
-    lv_obj_set_style_text_font(actual_label, &Thermostat180, 0);
-    lv_obj_align(actual_label, LV_ALIGN_CENTER, 0, 30);
+    // --------------------
+    // RIGHT: TEXT AREA
+    // --------------------
+    lv_obj_t *text_area = lv_obj_create(container);
+    lv_obj_remove_style_all(text_area);
+    lv_obj_set_style_pad_gap(text_area, 4, 8);
+    lv_obj_set_width(text_area, SCREEN_WIDTH - 256);
+    lv_obj_set_height(text_area, SCREEN_HEIGHT);
+    lv_obj_set_flex_flow(text_area, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_grow(text_area, 1);
+    // --------------------
+    // Artist
+    // --------------------
+    album_label = lv_label_create(text_area);
+    lv_obj_set_style_text_font(album_label, &Roboto37, 0);
+    lv_obj_set_style_pad_bottom(album_label, 32, 0);
+    lv_obj_set_style_pad_left(album_label, 16, 0);
+    lv_obj_set_width(album_label, LV_PCT(100));
+    lv_label_set_text(album_label, "Insert a Cartridge");
 
+    // --------------------
+    // Divider
+    // --------------------
     static lv_style_t style_line;
     lv_style_init(&style_line);
     lv_style_set_line_width(&style_line, 4);
     lv_style_set_line_rounded(&style_line, true);
 
-    static lv_point_t line_points[] = { {20, 60}, {772, 60} };
+    static lv_point_t line_points[] = { {288, 64}, {746, 64} };
     lv_obj_t * line1 = lv_line_create(scr);
     lv_obj_add_style(line1, &style_line, 0);
     lv_line_set_points(line1, line_points, 2);
 
-    time_label = lv_label_create(scr);
-    lv_label_set_text_fmt(time_label, "3:38PM");
-    lv_obj_set_style_text_font(time_label, &Thermostat50, 0);
-    lv_obj_align(time_label, LV_ALIGN_TOP_RIGHT, -20, 5);
 
-    fan_label = lv_label_create(scr);
-    lv_label_set_text_fmt(fan_label, "_%s", fan_modes[fan_mode]);
-    lv_obj_set_style_text_font(fan_label, &Thermostat50, 0);
-    lv_obj_align(fan_label, LV_ALIGN_TOP_RIGHT, -20, 65);
 
-    mode_label = lv_label_create(scr);
-    lv_label_set_text_fmt(mode_label, "%s", hvac_modes[hvac_mode]);
-    lv_obj_set_style_text_font(mode_label, &Thermostat50, 0);
-    lv_obj_align(mode_label, LV_ALIGN_BOTTOM_RIGHT, -20, -5);
+    lv_obj_t *list = lv_obj_create(text_area);
+    lv_obj_remove_style_all(list);
+    lv_obj_set_flex_grow(list, 1);
+    lv_obj_set_width(list, LV_PCT(100));
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
 
+    track1_label= lv_label_create(list);
+    lv_obj_set_style_text_font(track1_label, &Roboto32, 0);
+    lv_label_set_text(track1_label, "");
+    track2_label= lv_label_create(list);
+    lv_obj_set_style_text_font(track2_label, &Roboto32, 0);
+    lv_label_set_text(track2_label, "");
+    track3_label= lv_label_create(list);
+    lv_obj_set_style_text_font(track3_label, &Roboto32, 0);
+    lv_label_set_text(track3_label, "");
+    track4_label= lv_label_create(list);
+    lv_obj_set_style_text_font(track4_label, &Roboto32, 0);
+    lv_label_set_text(track4_label, "");
+    track5_label= lv_label_create(list);
+    lv_obj_set_style_text_font(track5_label, &Roboto32, 0);
+    lv_label_set_text(track5_label, "");
 }
 
 void ui_render_loop()
@@ -263,7 +230,6 @@ void ui_render_loop()
 void ui_handle_inactivity()
 {
     if (!inactivity_refresh_completed && millis() - last_activity > 60000) {
-        Serial.println("Inactivity full refresh");
         ui_full_refresh();
         inactivity_refresh_completed = true;
     }

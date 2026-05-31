@@ -1,6 +1,5 @@
 #include "EPD_Init.h"
-#include "EPD.h"
-
+#include "spi.h"
 
 
 /*******************************************************************
@@ -8,7 +7,7 @@
     入口参数:无
     说明:忙状态为1
 *******************************************************************/
-void EPD_READBUSY(void)
+static void EPD_READBUSY(void)
 {
   while (1)
   {
@@ -23,7 +22,7 @@ void EPD_READBUSY(void)
     入口参数:无
     说明:在E-Paper进入Deepsleep状态后需要硬件复位
 *******************************************************************/
-void EPD_HW_RESET(void)
+static void EPD_HW_RESET(void)
 {
   delay(10);
   EPD_RES_Clr();
@@ -56,34 +55,6 @@ void EPD_PartUpdate(void)
   EPD_WR_DATA8(0xDC);
   EPD_WR_REG(0x20);
   EPD_READBUSY();
-}
-/*******************************************************************
-    函数说明:快刷更新函数
-    入口参数:无
-    说明:E-Paper工作在快刷模式
-*******************************************************************/
-void EPD_FastUpdate(void)
-{
-  EPD_WR_REG(0x22);
-  EPD_WR_DATA8(0xC7);
-  EPD_WR_REG(0x20);
-  EPD_READBUSY();
-}
-
-/*******************************************************************
-    函数说明:休眠函数
-    入口参数:无
-    说明:屏幕进入低功耗模式
-*******************************************************************/
-void EPD_DeepSleep(void)
-{
-//    EPD_WR_REG(0x3C);
-//    EPD_WR_DATA8(0x01);
-//    EPD_READBUSY();
-
-  EPD_WR_REG(0x10);
-  EPD_WR_DATA8(0x01);
-  delay(5);
 }
 
 void EPD_Init(void)
@@ -123,7 +94,7 @@ void EPD_FastMode1Init(void)
   EPD_READBUSY();
 }
 
-void EPD_SetRAMMP(void)
+static void EPD_SetRAMMP(void)
 {
   EPD_WR_REG(0x11);	 // Data Entry mode setting
   EPD_WR_DATA8(0x05);     // 1 –Y decrement, X increment
@@ -137,7 +108,7 @@ void EPD_SetRAMMP(void)
   EPD_WR_DATA8(0x00);
 }
 
-void EPD_SetRAMMA(void)
+static void EPD_SetRAMMA(void)
 {
   EPD_WR_REG(0x4e);
   EPD_WR_DATA8(0x00);
@@ -146,7 +117,7 @@ void EPD_SetRAMMA(void)
   EPD_WR_DATA8(0x01);
 }
 
-void EPD_SetRAMSP(void)
+static void EPD_SetRAMSP(void)
 {
   EPD_WR_REG(0x91);
   EPD_WR_DATA8(0x04);
@@ -160,7 +131,7 @@ void EPD_SetRAMSP(void)
   EPD_WR_DATA8(0x00);
 }
 
-void EPD_SetRAMSA(void)
+static void EPD_SetRAMSA(void)
 {
   EPD_WR_REG(0xce);
   EPD_WR_DATA8(0x31);
@@ -272,95 +243,3 @@ void EPD_Display(const uint8_t *ImageBW)
   }
 }
 
-//Horizontal scanning, from right to left, from bottom to top
-void EPD_WhiteScreen_ALL_Fast(const unsigned char *datas)
-{
-  unsigned int i;
-  unsigned char tempOriginal;
-  unsigned int tempcol = 0;
-  unsigned int templine = 0;
-
-  EPD_WR_REG(0x11);
-  EPD_WR_DATA8(0x05);
-
-  EPD_WR_REG(0x44); //set Ram-X address start/end position
-  EPD_WR_DATA8(0x00);
-  EPD_WR_DATA8(0x31);    //0x12-->(18+1)*8=152
-
-  EPD_WR_REG(0x45); //set Ram-Y address start/end position
-  EPD_WR_DATA8(0x0F);   //0x97-->(151+1)=152
-  EPD_WR_DATA8(0x01);
-  EPD_WR_DATA8(0x00);
-  EPD_WR_DATA8(0x00);
-
-  EPD_WR_REG(0x4E);
-  EPD_WR_DATA8(0x00);
-  EPD_WR_REG(0x4F);
-  EPD_WR_DATA8(0x0F);
-  EPD_WR_DATA8(0x01);
-
-  EPD_READBUSY();
-  EPD_WR_REG(0x24);   //write RAM for black(0)/white (1)
-  for (i = 0; i < Source_BYTES * Gate_BITS; i++)
-  {
-    tempOriginal = *(datas + templine * Source_BYTES * 2 + tempcol);
-    templine++;
-    if (templine >= Gate_BITS)
-    {
-      tempcol++;
-      templine = 0;
-    }
-    EPD_WR_DATA8(~tempOriginal);
-  }
-
-  EPD_WR_REG(0x26);   //write RAM for black(0)/white (1)
-  for (i = 0; i < Source_BYTES * Gate_BITS; i++)
-  {
-    EPD_WR_DATA8(0X00);
-  }
-
-
-  EPD_WR_REG(0x91);
-  EPD_WR_DATA8(0x04);
-
-  EPD_WR_REG(0xC4); //set Ram-X address start/end position
-  EPD_WR_DATA8(0x31);
-  EPD_WR_DATA8(0x00);    //0x12-->(18+1)*8=152
-
-  EPD_WR_REG(0xC5); //set Ram-Y address start/end position
-  EPD_WR_DATA8(0x0F);   //0x97-->(151+1)=152  ÐÞ¸ÄµÄ
-  EPD_WR_DATA8(0x01);
-  EPD_WR_DATA8(0x00);
-  EPD_WR_DATA8(0x00);
-
-  EPD_WR_REG(0xCE);
-  EPD_WR_DATA8(0x31);
-  EPD_WR_REG(0xCF);
-  EPD_WR_DATA8(0x0F);
-  EPD_WR_DATA8(0x01);
-
-  EPD_READBUSY();
-
-  tempcol = tempcol - 1; //Byte dislocation processing
-  templine = 0;
-  EPD_WR_REG(0xa4);   //write RAM for black(0)/white (1)
-  for (i = 0; i < Source_BYTES * Gate_BITS; i++)
-  {
-    tempOriginal = *(datas + templine * Source_BYTES * 2 + tempcol);
-    templine++;
-    if (templine >= Gate_BITS)
-    {
-      tempcol++;
-      templine = 0;
-    }
-    EPD_WR_DATA8(~tempOriginal);
-  }
-
-  EPD_WR_REG(0xa6);   //write RAM for black(0)/white (1)
-  for (i = 0; i < Source_BYTES * Gate_BITS; i++)
-  {
-    EPD_WR_DATA8(0X00);
-  }
-
-  EPD_FastUpdate();
-}
