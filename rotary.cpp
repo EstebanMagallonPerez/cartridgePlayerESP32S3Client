@@ -52,7 +52,7 @@ using RotaryDirectionHandler = void (*)(int8_t direction);
 static RotaryEncoder encoder;
 static uint16_t last_raw = 0xFFFF;
 static int last_sector = -1;
-static uint8_t numTicksPerRevolution = 25;
+static uint8_t numTicksPerRevolution = 1028;
 static RotaryDirectionHandler directionHandler = nullptr;
 
 void rotary_init(int sda_pin, int scl_pin, uint8_t ticksPerRevolution) {
